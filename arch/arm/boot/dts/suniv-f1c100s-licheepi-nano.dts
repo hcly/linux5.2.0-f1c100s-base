@@ -183,8 +183,12 @@
 	status = "okay";
 };
 
+&otg_sram {
+	status = "okay";
+};
+
 &usb_otg {
-	dr_mode = "otg";
+	dr_mode = "host";
 	status = "okay";
 };
 
