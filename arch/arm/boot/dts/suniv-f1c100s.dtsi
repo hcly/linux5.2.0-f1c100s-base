@@ -202,6 +202,11 @@
 				pins = "PC0", "PC1", "PC2", "PC3";
 				function = "spi0";
 			};
+
+			rtp_pins: rtp-pins {
+				pins = "PA0", "PA1", "PA2", "PA3";
+				function = "rtp";
+			};
 		};
 
 		timer@1c20c00 {
@@ -374,5 +379,16 @@
 			#phy-cells = <1>;
 			status = "disabled";
 		};
+
+		rtp: rtp@1c24800 {
+			compatible = "allwinner,sun4i-a10-ts";
+			reg = <0x01c24800 0x100>;
+			interrupts = <20>;
+			allwinner,ts-attached;
+			#thermal-sensor-cells = <0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&rtp_pins>;
+		};
+
 	};
 };
