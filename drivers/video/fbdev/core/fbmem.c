@@ -37,7 +37,7 @@
 #include <linux/pci.h>
 
 #include <asm/fb.h>
-
+#include <linux/memblock.h>
 
     /*
      *  Frame buffer device initialization and setup routines
@@ -694,16 +694,88 @@ int fb_prepare_logo(struct fb_info *info, int rotate)
 
 	return fb_prepare_extra_logos(info, height, yres);
 }
+//add by leijie
+static inline void *fb_copy_map(struct page *page, unsigned int phys, int size)
+{
+	unsigned long num_pages, i;
+	struct page **pages;
+	void *virt = NULL;
 
+	num_pages = size >> PAGE_SHIFT;
+	pages = kmalloc(num_pages * sizeof(struct page *), GFP_KERNEL);
+
+	if (!pages)
+		return NULL;
+
+	for (i = 0; i < num_pages; i++)
+		pages[i] = pfn_to_page((phys >> PAGE_SHIFT) + i);
+
+	virt = vmap(pages, num_pages, VM_MAP, pgprot_writecombine(PAGE_KERNEL));
+	if (!virt) {
+		kfree(pages);
+		return NULL;
+	}
+	kfree(pages);
+
+	return virt;
+}
+
+static inline  void fb_copy_unmap(struct page *page, void *virt)
+{
+	vunmap((void*)virt);
+}
+
+static int myfbphy = 0;
+
+static int __init fb_phy_setup(char *str)
+{
+	if (!str || !*str)
+		return 1;
+	myfbphy = simple_strtoul(str, &str, 0);
+}
+__setup("fbphybase=", fb_phy_setup);
+//add end
 int fb_show_logo(struct fb_info *info, int rotate)
 {
 	int y;
 
-	y = fb_show_logo_line(info, rotate, fb_logo.logo, 0,
-			      num_online_cpus());
-	y = fb_show_extra_logos(info, y, rotate);
+	if(!myfbphy) {
+		y = fb_show_logo_line(info, rotate, fb_logo.logo, 0,
+					  num_online_cpus());
+		y = fb_show_extra_logos(info, y, rotate);
+		return y;
+	} else {
+		int xres   = info->var.xres;
+		int yres   = info->var.yres;
+		int pixel  = info->var.bits_per_pixel >> 3;
+		int size = xres * yres * pixel;
+		unsigned phys = 0x83e89000;
+		void *virt = NULL;
+		struct page *page;
+		size = PAGE_ALIGN(size);
+		int reserved = memblock_is_region_reserved(phys, size);
+		int new = 0;
+		if (!reserved) {
+			memblock_reserve(phys, size);
+			new = memblock_is_region_reserved(phys, size);
+		}
+		if (reserved || new)
+			virt = fb_copy_map(page, phys, size);
+		if (virt) {
+			memcpy(info->screen_base, (const void*)virt, size);
+			//dmac_map_area(info->screen_base, size, DMA_TO_DEVICE);	/* L1 flush cache */
+			//outer_clean_range(base, base + size);				/* L2 flush cache */
+			fb_copy_unmap(page, virt);
+			if (new)
+				memblock_free(phys, size);
+		}
 
-	return y;
+	 	if (phys && 0 == virt) {
+			printk("%s Fail boot logo copy from 0x%08x\n",__func__, phys);
+			__memblock_dump_all();
+		}
+		return info->var.yres;
+	}
 }
 #else
 int fb_prepare_logo(struct fb_info *info, int rotate) { return 0; }
